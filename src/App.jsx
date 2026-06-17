@@ -221,9 +221,13 @@ export default function App(){
   },[session]);
 
   const handleEntrada=async(unidades,obs,emb)=>{
-    await supabase.from("supplies").update({estoque:entModal.estoque+unidades}).eq("id",entModal.id);
-    const obsTxt=emb?("Entrada: "+emb+" "+entModal.unidade_compra+" = "+unidades+" un"+(obs?(". "+obs):"")):("Entrada: "+unidades+" un"+(obs?(". "+obs):""));
-    await supabase.from("stock_movements").insert({supply_id:entModal.id,patient_id:PATIENT_ID,profile_id:session.user.id,tipo:"entrada",quantidade:unidades,observacao:obsTxt});
+    if(!entModal)return showToast("Erro: insumo nao identificado","erro");
+    if(!unidades||unidades<=0)return showToast("Quantidade invalida","erro");
+    const r1=await supabase.from("supplies").update({estoque:entModal.estoque+unidades}).eq("id",entModal.id);
+    if(r1.error){console.error(r1.error);return showToast("Erro: "+r1.error.message,"erro");}
+    const obsTxt=emb?("Entrada: "+emb+" "+(entModal.unidade_compra||"cx")+" = "+unidades+" un"+(obs?(". "+obs):"")): ("Entrada: "+unidades+" un"+(obs?(". "+obs):""));
+    const r2=await supabase.from("stock_movements").insert({supply_id:entModal.id,patient_id:PATIENT_ID,profile_id:session.user.id,tipo:"entrada",quantidade:unidades,observacao:obsTxt});
+    if(r2.error){console.error(r2.error);return showToast("Erro movimento: "+r2.error.message,"erro");}
     showToast("+"+unidades+" unidades adicionadas!");
     setEntModal(null);
   };
