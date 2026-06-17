@@ -109,12 +109,18 @@ function Login({onLogin}){
   const [pw,setPw]=useState("");
   const [name,setName]=useState("");
   const [reg,setReg]=useState(false);
+  const [forgot,setForgot]=useState(false);
   const [loading,setLoading]=useState(false);
   const [msg,setMsg]=useState("");
   const handle=async()=>{
     setLoading(true);setMsg("");
     try{
-      if(reg){
+      if(forgot){
+        const r=await supabase.auth.resetPasswordForEmail(email,{redirectTo:window.location.origin});
+        if(r.error)throw r.error;
+        setMsg("E-mail de recuperacao enviado! Verifique sua caixa de entrada.");
+        setForgot(false);
+      }else if(reg){
         const r=await supabase.auth.signUp({email:email,password:pw});
         if(r.error)throw r.error;
         if(r.data.user){
@@ -136,15 +142,16 @@ function Login({onLogin}){
     <div style={{minHeight:"100vh",background:"linear-gradient(135deg,#1D4ED8,#3B82F6)",display:"flex",alignItems:"center",justifyContent:"center",padding:20,fontFamily:"Nunito, Segoe UI, sans-serif"}}>
       <div style={{background:"#fff",borderRadius:20,padding:"32px 24px",width:"100%",maxWidth:400,boxShadow:"0 20px 60px rgba(0,0,0,0.2)"}}>
         <p style={{fontSize:26,fontWeight:900,color:C.primary,margin:"0 0 4px"}}>CroniCare Control</p>
-        <p style={{fontSize:13,color:C.textSub,marginBottom:28}}>{reg?"Criar conta":"Entrar"}</p>
-        {reg&&<div><label style={lbl}>Nome</label><input style={inp} placeholder="Seu nome" value={name} onChange={e=>setName(e.target.value)}/></div>}
+        <p style={{fontSize:13,color:C.textSub,marginBottom:28}}>{forgot?"Recuperar senha":reg?"Criar conta":"Entrar"}</p>
+        {forgot&&<div style={{background:C.primaryLight,border:"1px solid "+C.primaryMid,borderRadius:12,padding:"12px 14px",marginBottom:16}}><p style={{fontSize:13,color:C.primary,margin:0,fontWeight:600}}>Digite seu e-mail e enviaremos um link para redefinir sua senha.</p></div>}
+        {reg&&!forgot&&<div><label style={lbl}>Nome</label><input style={inp} placeholder="Seu nome" value={name} onChange={e=>setName(e.target.value)}/></div>}
         <label style={lbl}>E-mail</label>
         <input style={inp} type="email" placeholder="seu@email.com" value={email} onChange={e=>setEmail(e.target.value)}/>
-        <label style={lbl}>Senha</label>
-        <input style={inp} type="password" placeholder="Senha" value={pw} onChange={e=>setPw(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")handle();}}/>
-        <button onClick={handle} disabled={loading} style={{width:"100%",background:C.primary,color:"#fff",border:"none",borderRadius:10,padding:"13px",fontWeight:800,fontSize:16,cursor:"pointer",fontFamily:"inherit"}}>{loading?"Aguarde...":(reg?"Criar Conta":"Entrar")}</button>
-        {msg&&<p style={{fontSize:13,color:msg.indexOf("criada")>=0?C.green:C.red,marginTop:12,textAlign:"center",fontWeight:600}}>{msg}</p>}
-        <p style={{fontSize:13,color:C.primary,textAlign:"center",marginTop:16,cursor:"pointer",fontWeight:700}} onClick={()=>{setReg(!reg);setMsg("");}}>{reg?"Ja tenho conta - Entrar":"Nao tenho conta - Criar conta"}</p>
+        {!forgot&&<div><label style={lbl}>Senha</label><input style={inp} type="password" placeholder="Senha" value={pw} onChange={e=>setPw(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")handle();}}/></div>}
+        <button onClick={handle} disabled={loading} style={{width:"100%",background:C.primary,color:"#fff",border:"none",borderRadius:10,padding:"13px",fontWeight:800,fontSize:16,cursor:"pointer",fontFamily:"inherit"}}>{loading?"Aguarde...":(forgot?"Enviar Link de Recuperacao":reg?"Criar Conta":"Entrar")}</button>
+        {msg&&<p style={{fontSize:13,color:msg.indexOf("criada")>=0||msg.indexOf("enviado")>=0?C.green:C.red,marginTop:12,textAlign:"center",fontWeight:600}}>{msg}</p>}
+        {!forgot&&<p style={{fontSize:13,color:C.primary,textAlign:"center",marginTop:16,cursor:"pointer",fontWeight:700}} onClick={()=>{setReg(!reg);setMsg("");}}>{reg?"Ja tenho conta - Entrar":"Nao tenho conta - Criar conta"}</p>}
+        <p style={{fontSize:13,color:forgot?C.textSub:C.orange,textAlign:"center",marginTop:8,cursor:"pointer",fontWeight:600}} onClick={()=>{setForgot(!forgot);setMsg("");}}>{forgot?"Voltar para o login":"Esqueci minha senha"}</p>
       </div>
     </div>
   );
