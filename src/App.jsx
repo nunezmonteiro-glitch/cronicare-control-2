@@ -178,6 +178,12 @@ export default function App(){
   const [obsS,setObsS]=useState("");
   const [buscaS,setBuscaS]=useState("");
   const [entModal,setEntModal]=useState(null);
+  const [kits,setKits]=useState([]);
+  const [kitLogs,setKitLogs]=useState([]);
+  const [kitModal,setKitModal]=useState(null); // null | "novo" | "editar" | "aplicar"
+  const [kitSel,setKitSel]=useState(null);
+  const [kitForm,setKitForm]=useState({nome:"",descricao:"",itens:[]});
+  const [kitBusca,setKitBusca]=useState("");
 
   const showToast=(msg,tipo)=>{setToast({msg:msg,tipo:tipo||"ok"});setTimeout(()=>setToast(null),3200);};
 
@@ -193,8 +199,12 @@ export default function App(){
     setLoading(true);
     const r1=await supabase.from("supplies").select("*, supply_lots(*)").eq("patient_id",PATIENT_ID).eq("active",true).order("nome");
     const r2=await supabase.from("stock_movements").select("*, profiles(name)").eq("patient_id",PATIENT_ID).order("created_at",{ascending:false}).limit(50);
+    const r3=await supabase.from("kits").select("*, kit_items(*, supplies(*))").eq("patient_id",PATIENT_ID).eq("ativo",true).order("nome");
+    const r4=await supabase.from("kit_logs").select("*, kits(nome), profiles(name)").eq("patient_id",PATIENT_ID).order("created_at",{ascending:false}).limit(50);
     if(r1.data)setInsumos(r1.data.map(i=>({...i,validades:i.supply_lots||[]})));
     if(r2.data)setHistorico(r2.data);
+    if(r3.data)setKits(r3.data);
+    if(r4.data)setKitLogs(r4.data);
     setLoading(false);
   };
 
@@ -261,6 +271,54 @@ export default function App(){
   };
   const togS=(i)=>setSolic(p=>{const e=p.find(x=>x.id===i.id);if(e)return p.filter(x=>x.id!==i.id);return p.concat([{...i,qtdS:Math.max(1,i.minimo-i.estoque)}]);});
   const updS=(id,q)=>setSolic(p=>p.map(i=>i.id===id?{...i,qtdS:parseInt(q)||1}:i));
+
+  const handleSalvarKit=async()=>{
+    if(!kitForm.nome)return showToast("Informe o nome do kit","erro");
+    if(!kitForm.itens||kitForm.itens.length===0)return showToast("Adicione pelo menos um insumo","erro");
+    if(kitModal==="novo"){
+      const r=await supabase.from("kits").insert({patient_id:PATIENT_ID,nome:kitForm.nome,descricao:kitForm.descricao||""}).select().single();
+      if(r.error)return showToast("Erro ao salvar kit","erro");
+      const items=kitForm.itens.map(i=>({kit_id:r.data.id,supply_id:i.supply_id,quantidade:i.quantidade}));
+      await supabase.from("kit_items").insert(items);
+      showToast("Kit cadastrado!");
+    }else{
+      await supabase.from("kits").update({nome:kitForm.nome,descricao:kitForm.descricao||""}).eq("id",kitSel.id);
+      await supabase.from("kit_items").delete().eq("kit_id",kitSel.id);
+      const items=kitForm.itens.map(i=>({kit_id:kitSel.id,supply_id:i.supply_id,quantidade:i.quantidade}));
+      await supabase.from("kit_items").insert(items);
+      showToast("Kit atualizado!");
+    }
+    setKitModal(null);setKitForm({nome:"",descricao:"",itens:[]});await loadAll();
+  };
+
+  const handleAplicarKit=async(kit,obs)=>{
+    // Verificar estoque de todos os itens
+    const semEstoque=kit.kit_items.filter(ki=>{
+      const ins=insumos.find(i=>i.id===ki.supply_id);
+      return !ins||ins.estoque<ki.quantidade;
+    });
+    if(semEstoque.length>0){
+      const nomes=semEstoque.map(ki=>ki.supplies?.nome||"item").join(", ");
+      return showToast("Estoque insuficiente: "+nomes,"erro");
+    }
+    // Dar baixa em todos os itens
+    for(const ki of kit.kit_items){
+      const ins=insumos.find(i=>i.id===ki.supply_id);
+      if(!ins)continue;
+      const c=(ins.consumo_mensal||[0,0,0,0]).slice();
+      c[c.length-1]=(c[c.length-1]||0)+ki.quantidade;
+      await supabase.from("supplies").update({estoque:ins.estoque-ki.quantidade,consumo_mensal:c}).eq("id",ins.id);
+      await supabase.from("stock_movements").insert({supply_id:ins.id,patient_id:PATIENT_ID,profile_id:session.user.id,tipo:"baixa",quantidade:ki.quantidade,observacao:"Kit: "+kit.nome});
+    }
+    await supabase.from("kit_logs").insert({kit_id:kit.id,patient_id:PATIENT_ID,profile_id:session.user.id,observacao:obs||""});
+    showToast("Kit aplicado! Baixa em "+kit.kit_items.length+" insumo(s).");
+    setKitModal(null);setKitSel(null);await loadAll();
+  };
+
+  const handleExcluirKit=async(kit)=>{
+    await supabase.from("kits").update({ativo:false}).eq("id",kit.id);
+    showToast("Kit removido.");await loadAll();
+  };
 
   const enviarSolic=()=>{
     if(!emailH)return showToast("Configure o e-mail","erro");
@@ -350,7 +408,7 @@ export default function App(){
       </div>
 
       <nav style={s.nav}>
-        {[["estoque","Estoque"],["alertas","Alertas"],["sugestoes","Pedido"],["solicitar","Solicitar"],["relatorios","Relatorios"]].map(p=>(
+        {[["estoque","Estoque"],["alertas","Alertas"],["kits","Kits"],["sugestoes","Pedido"],["solicitar","Solicitar"],["relatorios","Relatorios"]].map(p=>(
           <button key={p[0]} style={s.nb(aba===p[0])} onClick={()=>setAba(p[0])}>{p[1]}{p[0]==="alertas"&&alerts.length>0?(" ("+alerts.length+")"):""}</button>
         ))}
       </nav>
@@ -514,6 +572,68 @@ export default function App(){
           <div style={{height:32}}/>
         </div>}
 
+        {!loading&&aba==="kits"&&<div>
+          <div style={{...s.card,background:C.tealLight,borderColor:C.tealMid,marginBottom:16}}>
+            <p style={{fontSize:13,color:C.teal,margin:0,fontWeight:600}}>Monte kits com os insumos usados em cada procedimento. Ao aplicar um kit, a baixa e feita em todos os itens automaticamente.</p>
+          </div>
+          <button style={{...s.btnP,width:"100%",marginBottom:16,background:C.teal}} onClick={()=>{setKitModal("novo");setKitSel(null);setKitForm({nome:"",descricao:"",itens:[]});}}>+ Criar Novo Kit</button>
+
+          {kits.length===0&&<div style={{textAlign:"center",padding:"40px 20px",color:C.textMuted,fontSize:14,fontWeight:600,background:C.surfaceAlt,borderRadius:14}}>Nenhum kit cadastrado ainda.</div>}
+
+          {kits.map(kit=>{
+            const temEstoque=kit.kit_items.every(ki=>{const ins=insumos.find(i=>i.id===ki.supply_id);return ins&&ins.estoque>=ki.quantidade;});
+            return (
+              <div key={kit.id} style={s.card}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
+                  <div style={{flex:1,marginRight:8}}>
+                    <p style={{fontSize:15,fontWeight:800,color:C.text,margin:0}}>{kit.nome}</p>
+                    {kit.descricao&&<p style={{fontSize:12,color:C.textSub,margin:"3px 0 0"}}>{kit.descricao}</p>}
+                  </div>
+                  <span style={pill(temEstoque?C.greenLight:C.redLight,temEstoque?C.green:C.red)}>{temEstoque?"Pronto":"Sem estoque"}</span>
+                </div>
+
+                {/* Itens do kit */}
+                <div style={{background:C.surfaceAlt,borderRadius:10,padding:"10px 12px",marginBottom:10}}>
+                  <p style={{fontSize:11,fontWeight:800,color:C.textMuted,margin:"0 0 8px",textTransform:"uppercase",letterSpacing:0.8}}>Itens ({kit.kit_items.length})</p>
+                  {kit.kit_items.map((ki,idx)=>{
+                    const ins=insumos.find(i=>i.id===ki.supply_id);
+                    const ok=ins&&ins.estoque>=ki.quantidade;
+                    return (
+                      <div key={idx} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 0",borderBottom:idx<kit.kit_items.length-1?("1px solid "+C.border):"none"}}>
+                        <p style={{fontSize:13,fontWeight:600,margin:0,color:ok?C.text:C.red}}>{ki.supplies?.nome||"Insumo"}</p>
+                        <div style={{display:"flex",alignItems:"center",gap:8}}>
+                          <span style={{fontSize:12,color:C.textSub,fontWeight:600}}>{ki.quantidade} un</span>
+                          {ins&&<span style={{fontSize:11,color:ok?C.green:C.red,fontWeight:700}}>({ins.estoque} disp.)</span>}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                  <button style={{...s.sm(temEstoque?C.teal:"#94A3B8"),fontSize:12,padding:"6px 14px"}} onClick={()=>{if(temEstoque){setKitSel(kit);setKitModal("aplicar");}else showToast("Estoque insuficiente para aplicar este kit","erro");}}>Aplicar Kit</button>
+                  <button style={s.sm(C.primary)} onClick={()=>{setKitSel(kit);setKitForm({nome:kit.nome,descricao:kit.descricao||"",itens:kit.kit_items.map(ki=>({supply_id:ki.supply_id,quantidade:ki.quantidade,nome:ki.supplies?.nome||""}))});setKitModal("editar");}}>Editar</button>
+                  <button style={s.sm(C.red)} onClick={()=>handleExcluirKit(kit)}>Remover</button>
+                </div>
+              </div>
+            );
+          })}
+
+          {kitLogs.length>0&&<div style={{marginTop:8}}>
+            <p style={{...s.st,marginTop:16}}>Historico de Aplicacoes</p>
+            {kitLogs.slice(0,20).map((log,idx)=>(
+              <div key={idx} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderBottom:"1px solid "+C.border}}>
+                <div style={{flex:1,marginRight:8}}>
+                  <p style={{fontSize:13,fontWeight:700,margin:0}}>{log.kits?.nome||"Kit"}</p>
+                  <p style={{fontSize:11,color:C.textMuted,fontWeight:600}}>{new Date(log.created_at).toLocaleDateString("pt-BR")} {new Date(log.created_at).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})}{log.profiles?.name?(" - "+log.profiles.name):""}</p>
+                  {log.observacao&&<p style={{fontSize:11,color:C.textSub,margin:"1px 0 0"}}>{log.observacao}</p>}
+                </div>
+                <span style={pill(C.tealLight,C.teal,C.tealMid)}>Aplicado</span>
+              </div>
+            ))}
+          </div>}
+        </div>}
+
         {!loading&&aba==="relatorios"&&<div>
           <div style={s.sg}>
             <div style={s.sc(C.primary)}><div style={{fontSize:30,fontWeight:900,color:C.primary}}>{insumos.length}</div><div style={{fontSize:12,color:C.textSub,fontWeight:700}}>Tipos</div></div>
@@ -633,6 +753,92 @@ export default function App(){
       )}
 
       {entModal&&<EntradaModal ins={entModal} onSave={handleEntrada} onClose={()=>setEntModal(null)}/>}
+
+      {/* MODAL NOVO/EDITAR KIT */}
+      {(kitModal==="novo"||kitModal==="editar")&&(
+        <div style={s.ov} onClick={()=>setKitModal(null)}>
+          <div style={s.mb} onClick={e=>e.stopPropagation()}>
+            <div style={{width:40,height:4,background:C.border,borderRadius:2,margin:"0 auto 20px"}}/>
+            <p style={{fontSize:18,fontWeight:900,marginBottom:18,color:C.text}}>{kitModal==="novo"?"Novo Kit":"Editar Kit"}</p>
+
+            <label style={s.lbl}>Nome do Kit *</label>
+            <input style={{...s.inp,marginBottom:12}} placeholder="Ex: Kit Antibiotico EV" value={kitForm.nome} onChange={e=>setKitForm(f=>({...f,nome:e.target.value}))}/>
+
+            <label style={s.lbl}>Descricao (opcional)</label>
+            <input style={{...s.inp,marginBottom:16}} placeholder="Ex: Para antibioticos endovenosos" value={kitForm.descricao} onChange={e=>setKitForm(f=>({...f,descricao:e.target.value}))}/>
+
+            <p style={s.lbl}>Insumos do Kit</p>
+
+            {/* Itens ja adicionados */}
+            {(kitForm.itens||[]).map((ki,idx)=>(
+              <div key={idx} style={{...s.card,padding:"10px 14px",marginBottom:8,background:C.tealLight,borderColor:C.tealMid}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <p style={{fontSize:13,fontWeight:700,margin:0,flex:1,marginRight:8}}>{ki.nome||insumos.find(i=>i.id===ki.supply_id)?.nome||"Insumo"}</p>
+                  <div style={{display:"flex",alignItems:"center",gap:8}}>
+                    <input type="number" min="1" value={ki.quantidade} onChange={e=>setKitForm(f=>({...f,itens:f.itens.map((x,i)=>i===idx?{...x,quantidade:parseInt(e.target.value)||1}:x)}))} style={{...s.inp,width:60,padding:"4px 8px",fontSize:14,fontWeight:700,textAlign:"center"}}/>
+                    <span style={{fontSize:11,color:C.teal}}>un</span>
+                    <button onClick={()=>setKitForm(f=>({...f,itens:f.itens.filter((_,i)=>i!==idx)}))} style={{...s.sm(C.red),padding:"4px 8px"}}>X</button>
+                  </div>
+                </div>
+              </div>
+            ))}
+
+            {/* Buscar e adicionar insumo */}
+            <div style={{background:C.surfaceAlt,borderRadius:12,padding:12,marginBottom:16}}>
+              <p style={{fontSize:12,fontWeight:800,color:C.textMuted,margin:"0 0 8px",textTransform:"uppercase",letterSpacing:0.8}}>Adicionar Insumo</p>
+              <input style={{...s.inp,marginBottom:8}} placeholder="Buscar insumo..." value={kitBusca} onChange={e=>setKitBusca(e.target.value)}/>
+              <div style={{maxHeight:200,overflowY:"auto"}}>
+                {insumos.filter(i=>!kitBusca||i.nome.toLowerCase().indexOf(kitBusca.toLowerCase())>=0).filter(i=>!(kitForm.itens||[]).find(ki=>ki.supply_id===i.id)).slice(0,10).map(i=>(
+                  <div key={i.id} onClick={()=>{setKitForm(f=>({...f,itens:[...(f.itens||[]),{supply_id:i.id,quantidade:1,nome:i.nome}]}));setKitBusca("");}} style={{padding:"8px 10px",borderRadius:8,cursor:"pointer",marginBottom:4,background:C.surface,border:"1px solid "+C.border}}>
+                    <p style={{fontSize:13,fontWeight:600,margin:0}}>{i.nome}</p>
+                    <p style={{fontSize:11,color:C.textMuted,margin:"1px 0 0"}}>{i.categoria} - {lblEst(i)}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div style={{display:"flex",gap:8}}>
+              <button style={{...s.btnP,flex:1,background:C.teal}} onClick={handleSalvarKit}>Salvar Kit</button>
+              <button style={s.btnS} onClick={()=>setKitModal(null)}>Cancelar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL APLICAR KIT */}
+      {kitModal==="aplicar"&&kitSel&&(()=>{
+        const [obsKit,setObsKit]=useState("");
+        return (
+          <div style={s.ov} onClick={()=>setKitModal(null)}>
+            <div style={s.mb} onClick={e=>e.stopPropagation()}>
+              <div style={{width:40,height:4,background:C.border,borderRadius:2,margin:"0 auto 20px"}}/>
+              <p style={{fontSize:18,fontWeight:900,marginBottom:4,color:C.text}}>Aplicar Kit</p>
+              <p style={{fontSize:14,color:C.teal,marginBottom:16,fontWeight:700}}>{kitSel.nome}</p>
+
+              <div style={{background:C.surfaceAlt,borderRadius:12,padding:12,marginBottom:16}}>
+                <p style={{fontSize:12,fontWeight:800,color:C.textMuted,margin:"0 0 8px",textTransform:"uppercase",letterSpacing:0.8}}>Baixa automatica em</p>
+                {kitSel.kit_items.map((ki,idx)=>{
+                  const ins=insumos.find(i=>i.id===ki.supply_id);
+                  return (
+                    <div key={idx} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:idx<kitSel.kit_items.length-1?("1px solid "+C.border):"none"}}>
+                      <p style={{fontSize:13,fontWeight:600,margin:0}}>{ki.supplies?.nome||"Insumo"}</p>
+                      <span style={{fontSize:13,color:C.red,fontWeight:700}}>-{ki.quantidade} un {ins?"("+ins.estoque+" disp.)":""}</span>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <label style={s.lbl}>Observacao (opcional)</label>
+              <input style={{...s.inp,marginBottom:20}} placeholder="Ex: Dose das 08h - Amoxicilina" value={obsKit} onChange={e=>setObsKit(e.target.value)}/>
+
+              <div style={{display:"flex",gap:8}}>
+                <button style={{...s.btnP,flex:1,background:C.teal}} onClick={()=>handleAplicarKit(kitSel,obsKit)}>Confirmar Aplicacao</button>
+                <button style={s.btnS} onClick={()=>setKitModal(null)}>Cancelar</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
