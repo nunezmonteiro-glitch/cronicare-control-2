@@ -197,7 +197,7 @@ export default function App(){
 
   const loadAll=async()=>{
     setLoading(true);
-    const r1=await supabase.from("supplies").select("*, supply_lots(*)").eq("patient_id",PATIENT_ID).eq("active",true).order("nome");
+    const r1=await supabase.from("supplies").select("id, patient_id, codigo, nome, categoria, unidade, estoque, minimo, consumo_mensal, active, unidade_compra, itens_por_embalagem, created_at, updated_at, supply_lots(*)").eq("patient_id",PATIENT_ID).eq("active",true).order("nome");
     const r2=await supabase.from("stock_movements").select("*, profiles(name)").eq("patient_id",PATIENT_ID).order("created_at",{ascending:false}).limit(50);
     const r3=await supabase.from("kits").select("*, kit_items(*, supplies(*))").eq("patient_id",PATIENT_ID).eq("active",true).order("nome");
     const r4=await supabase.from("kit_logs").select("*, kits(nome), profiles(name)").eq("patient_id",PATIENT_ID).order("created_at",{ascending:false}).limit(50);
