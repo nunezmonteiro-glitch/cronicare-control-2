@@ -199,7 +199,7 @@ export default function App(){
     setLoading(true);
     const r1=await supabase.from("supplies").select("*, supply_lots(*)").eq("patient_id",PATIENT_ID).eq("active",true).order("nome");
     const r2=await supabase.from("stock_movements").select("*, profiles(name)").eq("patient_id",PATIENT_ID).order("created_at",{ascending:false}).limit(50);
-    const r3=await supabase.from("kits").select("*, kit_items(*, supplies(*))").eq("patient_id",PATIENT_ID).eq("ativo",true).order("nome");
+    const r3=await supabase.from("kits").select("*, kit_items(*, supplies(*))").eq("patient_id",PATIENT_ID).eq("active",true).order("nome");
     const r4=await supabase.from("kit_logs").select("*, kits(nome), profiles(name)").eq("patient_id",PATIENT_ID).order("created_at",{ascending:false}).limit(50);
     if(r1.data)setInsumos(r1.data.map(i=>({...i,validades:i.supply_lots||[]})));
     if(r2.data)setHistorico(r2.data);
@@ -323,7 +323,7 @@ export default function App(){
   };
 
   const handleExcluirKit=async(kit)=>{
-    await supabase.from("kits").update({ativo:false}).eq("id",kit.id);
+    await supabase.from("kits").update({active:false}).eq("id",kit.id);
     showToast("Kit removido.");await loadAll();
   };
 
