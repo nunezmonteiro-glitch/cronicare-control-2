@@ -767,6 +767,75 @@ export default function App(){
           <div style={s.mb} onClick={e=>e.stopPropagation()}>
             <div style={{width:40,height:4,background:C.border,borderRadius:2,margin:"0 auto 20px"}}/>
             <p style={{fontSize:18,fontWeight:900,marginBottom:18,color:C.text}}>{kitModal==="novo"?"Novo Kit":"Editar Kit"}</p>
+            <label style={s.lbl}>Nome do Kit *</label>
+            <input style={{...s.inp,marginBottom:12}} placeholder="Ex: Kit Antibiotico EV" value={kitForm.nome} onChange={e=>setKitForm(f=>({...f,nome:e.target.value}))}/>
+            <label style={s.lbl}>Descricao (opcional)</label>
+            <input style={{...s.inp,marginBottom:16}} placeholder="Ex: Para antibioticos endovenosos" value={kitForm.descricao} onChange={e=>setKitForm(f=>({...f,descricao:e.target.value}))}/>
+            <p style={s.lbl}>Insumos do Kit</p>
+            {(kitForm.itens||[]).map((ki,idx)=>(
+              <div key={idx} style={{...s.card,padding:"10px 14px",marginBottom:8,background:C.tealLight,borderColor:C.tealMid}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <p style={{fontSize:13,fontWeight:700,margin:0,flex:1,marginRight:8}}>{ki.nome||insumos.find(i=>i.id===ki.supply_id)?.nome||"Insumo"}</p>
+                  <div style={{display:"flex",alignItems:"center",gap:8}}>
+                    <input type="number" min="1" value={ki.quantidade} onChange={e=>setKitForm(f=>({...f,itens:f.itens.map((x,i)=>i===idx?{...x,quantidade:parseInt(e.target.value)||1}:x)}))} style={{...s.inp,width:60,padding:"4px 8px",fontSize:14,fontWeight:700,textAlign:"center"}}/>
+                    <span style={{fontSize:11,color:C.teal}}>un</span>
+                    <button onClick={()=>setKitForm(f=>({...f,itens:f.itens.filter((_,i)=>i!==idx)}))} style={{...s.sm(C.red),padding:"4px 8px"}}>X</button>
+                  </div>
+                </div>
+              </div>
+            ))}
+            <div style={{background:C.surfaceAlt,borderRadius:12,padding:12,marginBottom:16}}>
+              <p style={{fontSize:12,fontWeight:800,color:C.textMuted,margin:"0 0 8px",textTransform:"uppercase",letterSpacing:0.8}}>Adicionar Insumo</p>
+              <input style={{...s.inp,marginBottom:8}} placeholder="Buscar insumo..." value={kitBusca} onChange={e=>setKitBusca(e.target.value)}/>
+              <div style={{maxHeight:200,overflowY:"auto"}}>
+                {insumos.filter(i=>!kitBusca||i.nome.toLowerCase().indexOf(kitBusca.toLowerCase())>=0).filter(i=>!(kitForm.itens||[]).find(ki=>ki.supply_id===i.id)).slice(0,10).map(i=>(
+                  <div key={i.id} onClick={()=>{setKitForm(f=>({...f,itens:[...(f.itens||[]),{supply_id:i.id,quantidade:1,nome:i.nome}]}));setKitBusca("");}} style={{padding:"8px 10px",borderRadius:8,cursor:"pointer",marginBottom:4,background:C.surface,border:"1px solid "+C.border}}>
+                    <p style={{fontSize:13,fontWeight:600,margin:0}}>{i.nome}</p>
+                    <p style={{fontSize:11,color:C.textMuted,margin:"1px 0 0"}}>{i.categoria} - {lblEst(i)}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div style={{display:"flex",gap:8}}>
+              <button style={{...s.btnP,flex:1,background:C.teal}} onClick={handleSalvarKit}>Salvar Kit</button>
+              <button style={s.btnS} onClick={()=>setKitModal(null)}>Cancelar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL APLICAR KIT */}
+      {kitModal==="aplicar"&&kitSel&&(
+        <div style={s.ov} onClick={()=>setKitModal(null)}>
+          <div style={s.mb} onClick={e=>e.stopPropagation()}>
+            <div style={{width:40,height:4,background:C.border,borderRadius:2,margin:"0 auto 20px"}}/>
+            <p style={{fontSize:18,fontWeight:900,marginBottom:4,color:C.text}}>Aplicar Kit</p>
+            <p style={{fontSize:14,color:C.teal,marginBottom:16,fontWeight:700}}>{kitSel.nome}</p>
+            <div style={{background:C.surfaceAlt,borderRadius:12,padding:12,marginBottom:16}}>
+              <p style={{fontSize:12,fontWeight:800,color:C.textMuted,margin:"0 0 8px",textTransform:"uppercase",letterSpacing:0.8}}>Baixa automatica em</p>
+              {kitSel.kit_items.map((ki,idx)=>{
+                const ins=insumos.find(i=>i.id===ki.supply_id);
+                return (
+                  <div key={idx} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:idx<kitSel.kit_items.length-1?("1px solid "+C.border):"none"}}>
+                    <p style={{fontSize:13,fontWeight:600,margin:0}}>{ki.supplies?.nome||"Insumo"}</p>
+                    <span style={{fontSize:13,color:C.red,fontWeight:700}}>-{ki.quantidade} un {ins?"("+ins.estoque+" disp.)":""}</span>
+                  </div>
+                );
+              })}
+            </div>
+            <label style={s.lbl}>Observacao (opcional)</label>
+            <input style={{...s.inp,marginBottom:20}} placeholder="Ex: Dose das 08h" value={form.obsKit||""} onChange={e=>setForm(f=>({...f,obsKit:e.target.value}))}/>
+            <div style={{display:"flex",gap:8}}>
+              <button style={{...s.btnP,flex:1,background:C.teal}} onClick={()=>handleAplicarKit(kitSel,form.obsKit||"")}>Confirmar Aplicacao</button>
+              <button style={s.btnS} onClick={()=>setKitModal(null)}>Cancelar</button>
+            </div>
+          </div>
+        </div>
+      )}
+        <div style={s.ov} onClick={()=>setKitModal(null)}>
+          <div style={s.mb} onClick={e=>e.stopPropagation()}>
+            <div style={{width:40,height:4,background:C.border,borderRadius:2,margin:"0 auto 20px"}}/>
+            <p style={{fontSize:18,fontWeight:900,marginBottom:18,color:C.text}}>{kitModal==="novo"?"Novo Kit":"Editar Kit"}</p>
 
             <label style={s.lbl}>Nome do Kit *</label>
             <input style={{...s.inp,marginBottom:12}} placeholder="Ex: Kit Antibiotico EV" value={kitForm.nome} onChange={e=>setKitForm(f=>({...f,nome:e.target.value}))}/>
@@ -811,41 +880,6 @@ export default function App(){
           </div>
         </div>
       )}
-
-      {/* MODAL APLICAR KIT */}
-      {kitModal==="aplicar"&&kitSel&&(()=>{
-        const [obsKit,setObsKit]=useState("");
-        return (
-          <div style={s.ov} onClick={()=>setKitModal(null)}>
-            <div style={s.mb} onClick={e=>e.stopPropagation()}>
-              <div style={{width:40,height:4,background:C.border,borderRadius:2,margin:"0 auto 20px"}}/>
-              <p style={{fontSize:18,fontWeight:900,marginBottom:4,color:C.text}}>Aplicar Kit</p>
-              <p style={{fontSize:14,color:C.teal,marginBottom:16,fontWeight:700}}>{kitSel.nome}</p>
-
-              <div style={{background:C.surfaceAlt,borderRadius:12,padding:12,marginBottom:16}}>
-                <p style={{fontSize:12,fontWeight:800,color:C.textMuted,margin:"0 0 8px",textTransform:"uppercase",letterSpacing:0.8}}>Baixa automatica em</p>
-                {kitSel.kit_items.map((ki,idx)=>{
-                  const ins=insumos.find(i=>i.id===ki.supply_id);
-                  return (
-                    <div key={idx} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:idx<kitSel.kit_items.length-1?("1px solid "+C.border):"none"}}>
-                      <p style={{fontSize:13,fontWeight:600,margin:0}}>{ki.supplies?.nome||"Insumo"}</p>
-                      <span style={{fontSize:13,color:C.red,fontWeight:700}}>-{ki.quantidade} un {ins?"("+ins.estoque+" disp.)":""}</span>
-                    </div>
-                  );
-                })}
-              </div>
-
-              <label style={s.lbl}>Observacao (opcional)</label>
-              <input style={{...s.inp,marginBottom:20}} placeholder="Ex: Dose das 08h - Amoxicilina" value={obsKit} onChange={e=>setObsKit(e.target.value)}/>
-
-              <div style={{display:"flex",gap:8}}>
-                <button style={{...s.btnP,flex:1,background:C.teal}} onClick={()=>handleAplicarKit(kitSel,obsKit)}>Confirmar Aplicacao</button>
-                <button style={s.btnS} onClick={()=>setKitModal(null)}>Cancelar</button>
-              </div>
-            </div>
-          </div>
-        );
-      })()}
     </div>
   );
 }
