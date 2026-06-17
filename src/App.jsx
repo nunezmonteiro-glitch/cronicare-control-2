@@ -213,6 +213,9 @@ export default function App(){
     const ch=supabase.channel("rt")
       .on("postgres_changes",{event:"*",schema:"public",table:"supplies",filter:"patient_id=eq."+PATIENT_ID},()=>loadAll())
       .on("postgres_changes",{event:"*",schema:"public",table:"stock_movements",filter:"patient_id=eq."+PATIENT_ID},()=>loadAll())
+      .on("postgres_changes",{event:"*",schema:"public",table:"kits",filter:"patient_id=eq."+PATIENT_ID},()=>loadAll())
+      .on("postgres_changes",{event:"*",schema:"public",table:"kit_items"},()=>loadAll())
+      .on("postgres_changes",{event:"*",schema:"public",table:"kit_logs",filter:"patient_id=eq."+PATIENT_ID},()=>loadAll())
       .subscribe();
     return ()=>{supabase.removeChannel(ch);};
   },[session]);
@@ -277,9 +280,10 @@ export default function App(){
     if(!kitForm.itens||kitForm.itens.length===0)return showToast("Adicione pelo menos um insumo","erro");
     if(kitModal==="novo"){
       const r=await supabase.from("kits").insert({patient_id:PATIENT_ID,nome:kitForm.nome,descricao:kitForm.descricao||""}).select().single();
-      if(r.error)return showToast("Erro ao salvar kit","erro");
+      if(r.error){console.error(r.error);return showToast("Erro ao salvar kit","erro");}
       const items=kitForm.itens.map(i=>({kit_id:r.data.id,supply_id:i.supply_id,quantidade:i.quantidade}));
-      await supabase.from("kit_items").insert(items);
+      const r2=await supabase.from("kit_items").insert(items);
+      if(r2.error){console.error(r2.error);return showToast("Erro ao salvar itens","erro");}
       showToast("Kit cadastrado!");
     }else{
       await supabase.from("kits").update({nome:kitForm.nome,descricao:kitForm.descricao||""}).eq("id",kitSel.id);
@@ -288,7 +292,10 @@ export default function App(){
       await supabase.from("kit_items").insert(items);
       showToast("Kit atualizado!");
     }
-    setKitModal(null);setKitForm({nome:"",descricao:"",itens:[]});await loadAll();
+    setKitModal(null);
+    setKitForm({nome:"",descricao:"",itens:[]});
+    setKitSel(null);
+    await loadAll();
   };
 
   const handleAplicarKit=async(kit,obs)=>{
